@@ -1,7 +1,10 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using AutoMapper;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Writers;
 using MovicesApi.Models;
+using MovicesApi.Services;
 
 namespace MovicesApi.Controllers
 {
@@ -9,39 +12,101 @@ namespace MovicesApi.Controllers
     [ApiController]
     public class MoviesController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
+        private readonly IMovicesServices _movicesServices;
+        private readonly IGenresService _genresService;
+        private readonly IMapper _mapper;
         private new List<string> _allowExtentions = new List<string> { ".jpg", ".png" };
-        private long _maxAllowedPosterSize =1048576;
-        public MoviesController(ApplicationDbContext context)
+        private long _maxAllowedPosterSize = 1048576;
+        public MoviesController(IMovicesServices movicesServices,IGenresService genresService,IMapper mapper)
         {
-            _context = context;
+            _movicesServices = movicesServices; 
+            _genresService = genresService;
+            _mapper = mapper;   
         }
-        [HttpPost]
-        public async Task<IActionResult> CreateAsync([FromForm]MovieDto dto )
+        [HttpGet]
+        public async Task<IActionResult> CreateAllAsync()
         {
+
+            var movies = await _movicesServices.GetAll(); 
+            //TODO: map movie to Dto
+            var data =  _mapper.Map<IEnumerable<MoviesDetailsDto>>(movies); 
+            return Ok(data);
+        }
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetByIdAsync(int id)
+        {
+            var movie = await _movicesServices.GetById(id); 
+            if (movie == null)
+                return NotFound();
+            var dto = _mapper.Map<MoviesDetailsDto>(movie); 
+         
+            return Ok(dto);
+        }
+        [HttpGet("GetByGenreId")]
+        public async Task<IActionResult> GetByGenreIdAsync(byte genreId)
+        {
+
+            var movies = await _movicesServices.GetAll(genreId);
+            //TODO: map movie to Dto
+            var data = _mapper.Map<IEnumerable<MoviesDetailsDto>>(movies);
+            return Ok(data);
+        
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> CreateAsync([FromForm] MovieDto dto)
+        {
+            if (dto.Poster == null)
+                return BadRequest("Poster is required!");
             if (!_allowExtentions.Contains(Path.GetExtension(dto.Poster.FileName).ToLower()))
-               return BadRequest("Only .png and .jpg images are allowed!");
-            if(dto.Poster.Length>_maxAllowedPosterSize)
+                return BadRequest("Only .png and .jpg images are allowed!");
+            if (dto.Poster.Length > _maxAllowedPosterSize)
                 return BadRequest("Max allowed size for poster is 1Mb!");
-            var isValidGenre = await _context.Genres.AnyAsync(g=>g.Id==dto.GenreId); 
-            if(!isValidGenre)
+            var isValidGenre = await _genresService.IsvalidGenre(dto.GenreId); 
+            if (!isValidGenre)
                 return BadRequest("Invalid genre ID!");
-            using var dataStream=new MemoryStream();    
-
+            using var dataStream = new MemoryStream();
             await dto.Poster.CopyToAsync(dataStream);
-            var movie = new Movie
-            {
-                GenreId = dto.GenreId,
-                Title = dto.Title,  
-                Poster=dataStream.ToArray(),
-                Rate = dto.Rate,
-                Storeline = dto.Storeline,
-                Year = dto.Year,    
-            };
-           await _context.AddAsync(movie);
-            _context.SaveChanges(); 
+            var movie = _mapper.Map<Movie>(dto); 
+            movie.Poster=dataStream.ToArray();
+           _movicesServices.Add(movie); 
             return Ok(movie);
+        }
+        [HttpPut("{id}")]
+         public async Task<IActionResult>UpdateAsync(int id, [FromForm]MovieDto dto)
+        {
+            var movie = await _movicesServices.GetById(id); 
+            if (movie == null)
+                return NotFound($"No movie was found with Id : {id}");
+            var isValidGenre = await _genresService.IsvalidGenre(dto.GenreId); 
+            if (!isValidGenre)
+                return BadRequest("Invalid genre ID!");
+            if(dto.Poster != null)
+            {
+                if (!_allowExtentions.Contains(Path.GetExtension(dto.Poster.FileName).ToLower()))
+                    return BadRequest("Only .png and .jpg images are allowed!");
+                if (dto.Poster.Length > _maxAllowedPosterSize)
+                    return BadRequest("Max allowed size for poster is 1Mb!");
+                using var dataStream = new MemoryStream();
+                await dto.Poster.CopyToAsync(dataStream);
+                movie.Poster= dataStream.ToArray(); 
+            }
+            movie.Title=dto.Title;
+            movie.GenreId=dto.GenreId;
+            movie.Year=dto.Year;
+            movie.Storeline=dto.Storeline;
+            movie.Rate=dto.Rate;
+            _movicesServices.Update(movie);
+            return Ok(movie);
+        }
+        [HttpDelete("{id}")]
+        public async Task<IActionResult>DeleteAsync(int id)
+        {
+            var movie = await _movicesServices.GetById(id);
+            _movicesServices.Delete(movie);  
+            return Ok(movie);   
 
+        }
         }
     }
-}
+

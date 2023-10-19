@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 using MovicesApi.Models;
+using MovicesApi.Services;
 
 namespace MovicesApi
 {
@@ -16,9 +17,15 @@ namespace MovicesApi
             );
             builder.Services.AddControllers();
 
+            builder.Services.AddTransient< IGenresService,GenresService>();
+            builder.Services.AddTransient< IMovicesServices,MovieServices>();
+            builder.Services.AddAutoMapper(typeof(Program));
+
             builder.Services.AddCors(); 
             // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
             builder.Services.AddEndpointsApiExplorer();
+
+
             builder.Services.AddSwaggerGen(option =>
             {
                 option.SwaggerDoc("v1", new OpenApiInfo {
